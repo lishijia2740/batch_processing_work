@@ -54,19 +54,17 @@ class ArraySetOperate:
         arrs_sum[arrs_sum > 1] = 3
         tmp_arr = arrs_sum.astype('uint8')
         if np.sum(tmp_arr == 3):
-            pass
+            tmp_arr = tmp_arr - arr2
+            tmp_arr = tmp_arr + (arr1 + 1)
+            tmp_arr[tmp_arr == 4] = 1
+            tmp_arr[tmp_arr == 1] = 0
+            tmp_arr[tmp_arr == 3] = 1
+            res = tmp_arr
+            return res
         else:
             tmp_arr[:] = 0
             return tmp_arr
-        tmp_arr = tmp_arr - arr2
-        tmp_arr = tmp_arr + (arr1 + 1)
-        tmp_arr[tmp_arr == 4] = 1
-        tmp_arr[tmp_arr == 3] = 0
-        tmp_arr[tmp_arr == 0] = 5
-        tmp_arr[tmp_arr == 1] = 0
-        tmp_arr[tmp_arr == 5] = 1
-        res = tmp_arr
-        return res
+
 
         # arr1[arr1 > 1] = 2
         # arr1[arr1 < 1] = 0
@@ -97,10 +95,13 @@ class ArraySetOperate:
         arr1 = cls._to_binary(arr1)
         arr2 = cls._to_binary(arr2)
         sum_arr = arr1 + arr2
-        sum_arr[sum_arr < 1] = 1
-        sum_arr[sum_arr > 1] = 0
-        ret = sum_arr.astype('uint8')
-        return ret
+        if np.sum(sum_arr == 2):
+            sum_arr[sum_arr > 1] = 0
+            ret = sum_arr.astype('uint8')
+            return ret
+        else:
+            arr1[:] = 0
+            return arr1
 
 
 class LabelOperate:
@@ -196,8 +197,8 @@ if __name__ == '__main__':
     image3 = '/private/tmp/label9.nii.gz'
     lot = LabelOperate()
     lot.union(image3, image1, image2)
-    lot.intersection(image1, image2)
-    lot.difference(image3, image1)
-    lot.complement(image3)
-    lot.xor(image3, image2)
+    lot.intersection(image1, image3)
+    lot.difference(image2, image3)
+    lot.complement(image1)
+    lot.xor(image1, image3)
 
