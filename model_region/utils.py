@@ -216,6 +216,7 @@ class LabelRegister:
         return mapping_image
 
 
+
 if __name__ == '__main__':
     # 创建对象
     model_image = 'labels__alone.nii.gz'
