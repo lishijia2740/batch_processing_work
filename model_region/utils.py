@@ -28,105 +28,15 @@ class LabelRegister:
         :param image:
         :return:
         """
-        label_arr = sitk.GetArrayFromImage(image)
+        label_arr = image
         label_arr[label_arr > 1] = 1
         label_arr[label_arr < 1] = 0
         label_arr.astype(np.uint8)
-        # print(label_arr)
         region_properties = measure.regionprops(label_arr)
         # 这里界定似乎有些模糊
-        print(region_properties)
-        ret = region_properties[0]['bbox_area'] * self.get_volume_of_each_pix(image)
-        return ret
-
-    def get_volume_of_each_pix(self, label):
-        """
-        计算体积
-        :param label:
-        :return:
-        """
-        spacing = label.GetSpacing()
-        vol = 1
-        for val in spacing:
-            vol *= val
-        return vol
-
-    def get_model_acme(self, itk_arr):
-        """
-        获得模型四个顶点
-        :param itk_arr:
-        :return:
-        """
-        res_list = []
-        row_list = []
-        col_list = []
-        for i in range(itk_arr.shape[0]):
-            for x in range(itk_arr.shape[2]):
-                for y in range(itk_arr.shape[1]):
-                    if itk_arr[i][y][x] == 1:
-                        col_list.append([i, y, x])
-            left = col_list[0]
-            right = col_list[-1]
-            for y in range(itk_arr.shape[1]):
-                for x in range(itk_arr.shape[2]):
-                    if itk_arr[i][y][x] == 1:
-                        row_list.append([i, y, x])
-            top = col_list[0]
-            bottom = col_list[-1]
-            res_list = [left, right, top, bottom]
-        return res_list
-
-    def set_same_position(self, point_list):
-        """
-        获得平移方向和距离
-        :param model_point:
-        :param region_point:
-        :return:
-        """
-        res_list = []
-        print(point_list)
-        for i in point_list:
-                model_point = i[0]
-                region_point = i[1]
-                # print(model_point, region_point)
-                y_diff = region_point[1] - model_point[1]
-                x_diff = region_point[2] - model_point[2]
-                if y_diff > 0:
-                    row_move_direction = 'right'
-                    row_move_number = y_diff
-                else:
-                    row_move_direction = 'left'
-                    row_move_number = abs(y_diff)
-                if x_diff > 0:
-                    col_move_direction = 'bottom'
-                    col_move_number = x_diff
-                else:
-                    col_move_direction = 'top'
-                    col_move_number = abs(x_diff)
-                res_list.append([row_move_direction, row_move_number, col_move_direction,
-                                 col_move_number, model_point, region_point])
-        return res_list
-
-    def intersection(self, arr1, arr2, *args):
-        """
-        所有arr的交集
-        """
-        arr1 = self._to_binary(arr1)
-        arr2 = self._to_binary(arr2)
-        arrs_sum = arr1 + arr2
-        for other_arr in args:
-            arrs_sum += self._to_binary(other_arr)
-        arrs_sum[arrs_sum == 1] = 0
-        arrs_sum[arrs_sum > 1] = 1
-        res = arrs_sum.astype('uint8')
-        return res
-
-    @staticmethod
-    def _to_binary(label_arr):
-        label_arr[label_arr > 1] = 1
-        label_arr[label_arr < 1] = 0
-        ret = label_arr.astype('uint8')
-        return ret
+        arr_centroid = region_properties[0].centroid
+        arr_centroid = [round(arr_centroid[0]), round(arr_centroid[1]), round(arr_centroid[2])]
+        return arr_centroid
 
     def label_binary_array_resize_4d(self, labels, target_shape):
         """
@@ -180,27 +90,23 @@ class LabelRegister:
         :param itk_image: sitk.Image 对象
         :return:
         """
-        itk_image = sitk.ReadImage(itk_image)
         self._region_model = itk_image
 
-    def set_model_directon(self, itk_image):
+    def set_model_directon(self, model_image, region_image):
         """
         获得方向一致的模型
         :param itk_image:
         :return:
         """
-        itk_image = sitk.Image(itk_image)
+        model_image = sitk.ReadImage(model_image)
+        itk_image = sitk.ReadImage(region_image)
         # 调整region_model方向
-        transform = sitk.Transform()
-        transform.SetIdentity()
         resampler = sitk.ResampleImageFilter()
-        resampler.SetTransform(transform)
-        resampler.SetInterpolator(sitk.sitkLinear)
         resampler.SetOutputOrigin(itk_image.GetOrigin())
         resampler.SetOutputSpacing(itk_image.GetSpacing())
         resampler.SetSize(itk_image.GetSize())
         resampler.SetOutputDirection(itk_image.GetDirection())
-        new_region_model = resampler.Execute(self._region_model)
+        new_region_model = resampler.Execute(model_image)
         return new_region_model
 
     def set_model_shape(self, model_new_arr, region_arr):
@@ -212,17 +118,32 @@ class LabelRegister:
         """
         transform_arr = self.label_array_resize_3d(model_new_arr,
                                                    (region_arr.shape[0], region_arr.shape[1], region_arr.shape[2]))
-        # res_index_list = []
-        # for transform_arr in transform_arr_list:
-        #     # print(transform_arr)
-        #     for z in range(transform_arr.shape[0]):
-        #         for x in range(transform_arr.shape[2]):
-        #             for y in range(transform_arr.shape[1]):
-        #                 if transform_arr[z][y][x] == 1:
-        #                     res_index_list.append([y, x])
-        #         for i in res_index_list:
-        #             transform_arr[z][i[0]][i[1]] = region_arr[z][i[0]][i[1]]
         return transform_arr
+
+    def get_after_mapping_image(self, transform_arr, region_arr):
+        """
+        用最大交集映射图片的区域
+        :param max_intersection_arr:
+        :param itk_image_arr:
+        :return:
+        """
+        res_index_list = []
+        after_mapping_arr = np.zeros((region_arr.shape[0], region_arr.shape[1], region_arr.shape[2]))
+        for z in range(transform_arr.shape[0]):
+            for x in range(transform_arr.shape[2]):
+                for y in range(transform_arr.shape[1]):
+                    if transform_arr[z][y][x] == 1:
+                        res_index_list.append([z, y, x])
+            for i in res_index_list:
+                if region_arr[i[0]][i[1]][i[2]]:
+                    after_mapping_arr[i[0]][i[1]][i[2]] = region_arr[i[0]][i[1]][i[2]]
+        itk_image = sitk.GetImageFromArray(region_arr)
+        image_obj = sitk.GetImageFromArray(after_mapping_arr)
+        image_obj.SetSpacing(itk_image.GetSpacing())
+        image_obj.SetOrigin(itk_image.GetOrigin())
+        image_obj.SetDirection(itk_image.GetDirection())
+        # sitk.WriteImage(image_obj, 'res.nii.gz')
+        return image_obj
 
     def rigid_registration(self, itk_image):
         """
@@ -242,134 +163,64 @@ class LabelRegister:
         :param itk_image: sitk.Image 对象
         :return: sitk.Image 对象
         """
-        # 调整方向
-        new_region_model = self.set_model_directon(self._region_model)
+        # 调整model方向
+        new_model = self.set_model_directon(self._region_model, itk_image)
         # 将image转化为array
         itk_image = sitk.ReadImage(itk_image)
-        model_arr = sitk.GetArrayFromImage(new_region_model)
+        itk = sitk.ReadImage(new_model)
+        model_arr = sitk.GetArrayFromImage(itk)
         region_arr = sitk.GetArrayFromImage(itk_image)
         # 缩放
         transform_arr = self.set_model_shape(model_arr, region_arr)
-        # 找到模型的四个顶点
-        model_acme_list = self.get_model_acme(transform_arr)
-        region_acme_list = self.get_model_acme(region_arr)
-        print(model_acme_list, region_acme_list)
-        move_parameter_list = self.set_same_position([i for i in zip(model_acme_list, region_acme_list)])
-        # 移动
-        result_list = []
-        for move_parameter in move_parameter_list:
-            tmp_arr = np.zeros((model_arr.shape[0], model_arr.shape[1], model_arr.shape[2]))
-            # print(model_new_arr)
-            # 删除数组列 map(lambda x: x[1:], a)
-            row_move_direction, row_move_number, col_move_direction, col_move_number, model_point, region_point = \
-                move_parameter[0], move_parameter[1], move_parameter[2], move_parameter[3], move_parameter[4], \
-                move_parameter[5]
-            if move_parameter[0] == 'right':
-                tmp_arr[:, model_point[1] + row_move_number:] = model_arr[0][:, model_point[1]:-row_move_number]
-            else:
-                tmp_arr[:, model_point[1] - row_move_number:-row_move_number] = model_arr[0][:, model_point[1]:]
-            model_new_arr = np.zeros((model_arr.shape[1], model_arr.shape[2]))
-            if col_move_direction == 'bottom':
-                model_new_arr[model_point[0] + row_move_number:, :] = tmp_arr[model_point[1]:-row_move_number, :]
-            else:
-                model_new_arr[model_point[0] - row_move_number:-row_move_number, :] = tmp_arr[model_point[0]:, :]
+        # 设置外接矩形
+        transfrom_rectangle_centroid = self.bounding_rectangle(transform_arr)
+        region_rectangle_centroid = self.bounding_rectangle(region_arr)
+        # print(transfrom_rectangle_centroid, region_rectangle_centroid, transform_arr.shape, region_arr.shape)
+        # 两矩形质点坐标差值
+        move_z_num = region_rectangle_centroid[0] - transfrom_rectangle_centroid[0]
+        move_y_num = region_rectangle_centroid[1] - transfrom_rectangle_centroid[1]
+        move_x_num = region_rectangle_centroid[2] - transfrom_rectangle_centroid[2]
+        tmp_z_arr = np.zeros((transform_arr.shape[0], transform_arr.shape[1], transform_arr.shape[2]))
+        # 根据坐标差值进行移动
+        if move_z_num > 0:
+            tmp_z_arr[region_rectangle_centroid[0]:, :, :] = transform_arr[transfrom_rectangle_centroid[0]: transfrom_rectangle_centroid[0] + region_arr.shape[0] - region_rectangle_centroid[0], :, :]
+            tmp_z_arr[region_rectangle_centroid[0] - transfrom_rectangle_centroid[0]-1:region_rectangle_centroid[0], :, :] = transform_arr[:transfrom_rectangle_centroid[0]+1, :, :]
+        elif move_z_num == 0:
+            tmp_z_arr = transform_arr
+        else:
+            tmp_z_arr[region_rectangle_centroid[0]:region_rectangle_centroid[0] + (transform_arr.shape[0] - transfrom_rectangle_centroid[0]), :, :] = transform_arr[transfrom_rectangle_centroid[0]:, :, :]
+            tmp_z_arr[:region_rectangle_centroid[0]+1, :, :] = transform_arr[transfrom_rectangle_centroid[0] - region_rectangle_centroid[0]-1: transfrom_rectangle_centroid[0], :, :]
+        # print(tmp_z_arr)
+        tmp_y_arr = np.zeros((transform_arr.shape[0], transform_arr.shape[1], transform_arr.shape[2]))
+        if move_y_num > 0:
+            tmp_y_arr[:, region_rectangle_centroid[1]:, :] = tmp_z_arr[:, transfrom_rectangle_centroid[1]: transfrom_rectangle_centroid[1] + region_arr.shape[1] - region_rectangle_centroid[1], :]
+            tmp_y_arr[:, region_rectangle_centroid[1] - transfrom_rectangle_centroid[1] - 1:region_rectangle_centroid[1], :] = tmp_z_arr[:, :transfrom_rectangle_centroid[1] +1, :]
+        elif move_y_num == 0:
+            tmp_y_arr = tmp_z_arr
+        else:
+            tmp_y_arr[:, region_rectangle_centroid[1]:region_rectangle_centroid[1] + (transform_arr.shape[1] - transfrom_rectangle_centroid[1]), :] = tmp_z_arr[:, transfrom_rectangle_centroid[1]:, :]
+            tmp_y_arr[:, :region_rectangle_centroid[1]+1, :] = tmp_z_arr[:, transfrom_rectangle_centroid[1] - region_rectangle_centroid[1]-1: transfrom_rectangle_centroid[1], :]
+        # print(d)
+        tmp_x_arr = np.zeros((transform_arr.shape[0], transform_arr.shape[1], transform_arr.shape[2]))
+        if move_x_num > 0:
+            tmp_x_arr[:, :, region_rectangle_centroid[2]:] = tmp_y_arr[:, :, transfrom_rectangle_centroid[2]: transfrom_rectangle_centroid[2] + region_arr.shape[2] - region_rectangle_centroid[2]]
+            tmp_x_arr[:, :,
+            region_rectangle_centroid[2] - transfrom_rectangle_centroid[2]-1:region_rectangle_centroid[2]] = tmp_y_arr[:, :, : transfrom_rectangle_centroid[2]+1]
+        elif move_x_num == 0:
+            tmp_x_arr = tmp_y_arr
+        else:
+            tmp_x_arr[:, :, region_rectangle_centroid[2]:region_rectangle_centroid[2] + (transform_arr.shape[2] - transfrom_rectangle_centroid[2])] = tmp_y_arr[:, :, transfrom_rectangle_centroid[2]:]
+            tmp_x_arr[:, :, :region_rectangle_centroid[2]+1] = tmp_y_arr[:, :, transfrom_rectangle_centroid[2]-region_rectangle_centroid[2]-1: transfrom_rectangle_centroid[2]]
+        # 获取映射后区域
+        mapping_image = self.get_after_mapping_image(tmp_x_arr, region_arr)
+        return mapping_image
 
-            # 求最大交集
-            result = self.intersection(model_new_arr, region_arr)
-            print(result)
-            # 求映射后的数组
-            # res_index_list = []
-            # for z in range(transform_arr.shape[0]):
-            #     for x in range(transform_arr.shape[2]):
-            #         for y in range(transform_arr.shape[1]):
-            #             if transform_arr[z][y][x] == 1:
-            #                 res_index_list.append([y, x])
-            #     for i in res_index_list:
-            #         transform_arr[z][i[0]][i[1]] = region_arr[z][i[0]][i[1]]
-
-        # list1 = [0, 1, 2, 3, 0]
-        # list2 = [0, 5, 6, 7, 8]
-        # label_arr = np.array([[list1, list2]])
-        # # eare = self.bounding_rectangle(a)
-        # label_arr[label_arr > 1] = 1
-        # label_arr[label_arr < 1] = 0
-        # label_arr.astype(np.uint8)
-        # # print(label_arr)
-        # print(label_arr)
-        # region_properties = measure.label(label_arr)
-        # # 这里界定似乎有些模糊
-        # print(region_properties)
-        # print(self.get_volume_of_each_pix(itk_image))
-        # ret = region_properties[0]['bbox_area'] * self.get_volume_of_each_pix(itk_image)
-        # print(ret)
-
-
-# class LabelRegisterTestCase(unittest.TestCase):
-#     """
-#     测试用例类
-#     """
-#
-#     def setUp(self):
-#         """
-#         创建调查对象和答案
-#         :return:
-#         """
-#         pass
-#
-#     def test_set_region_model(self):
-#         """
-#
-#         :return:
-#         """
-#         pass
-#
-#     def test_rigid_registration(self):
-#         """
-#
-#         :return:
-#         """
-#         pass
 
 
 if __name__ == '__main__':
-    # region_image = sitk.ReadImage('plabels_1__images_1.nii.gz')
-    # model_1 = sitk.ReadImage('labels__1__alone.nii.gz')
-    # model_2 = sitk.ReadImage('labels__2__alone.nii.gz')
-    # model_1_arr = sitk.GetArrayFromImage(model_1)[:1]
-    # model_2_arr = sitk.GetArrayFromImage(model_2)[:1]
-    # # region_arr = sitk.GetArrayFromImage(region_image)
-    # model_arr = model_1_arr + model_2_arr
-    # # if model_arr[model_arr == 1]:
-    # #     model_arr[model_arr == 1] += 1
-    # out = sitk.GetImageFromArray(model_arr)
-    # sitk.WriteImage(out, 'labels__alone.nii.gz')
-
-    # img = sitk.ReadImage('labels__alone.nii.gz')
-    # img_arr = sitk.GetArrayFromImage(img)
-    # io.imshow(img_arr[0], cmap='gray')
-    # io.show()
-
-    # 构造
-    # arr1 = np.zeros((1, 9, 9))
-    # arr1[0][3:6, 3:6] = 1
-    # print(arr1)
-    # arr2 = np.zeros((1, 9, 9))
-    # arr2[0][2:5, 2:5] = 1
-    # arr2[0][4, 2:4] = 0
-    # print(arr2)
-    # io.imshow(arr1[0], cmap='gray')
-    # io.show()
-    # io.imshow(arr2[0], cmap='gray')
-    # io.show()
-    # #
-    # image1 = sitk.GetImageFromArray(arr1)
-    # image2 = sitk.GetImageFromArray(arr2)
-    # #
-    # # print(image1)
-    # # print(image2)
-    # sitk.WriteImage(image1, 'label__alone.nii.gz')
-    # sitk.WriteImage(image2, 'model.nii.gz')
-
+    # 创建对象
+    model_image = 'labels__alone.nii.gz'
+    itk_image = 'plabels_1__images_1.nii.gz'
     labelrigister = LabelRegister()
-    labelrigister.set_region_model('model.nii.gz')
-    labelrigister.rigid_registration('label__alone.nii.gz')
+    labelrigister.set_region_model(model_image)
+    labelrigister.rigid_registration(itk_image)
