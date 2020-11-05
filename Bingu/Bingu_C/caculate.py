@@ -2,8 +2,47 @@ import math
 import random
 
 
-class CaculateAngle():
-    # 三角形三条边求角度
+class CaculateAngle:
+
+    def cross_point(self, line1, line2):  # 计算交点函数
+        x1 = line1[0]  # 取四点坐标
+        y1 = line1[1]
+        x2 = line1[2]
+        y2 = line1[3]
+
+        x3 = line2[0]
+        y3 = line2[1]
+        x4 = line2[2]
+        y4 = line2[3]
+
+        if (x4 - x3) == 0:  # L2直线斜率不存在操作
+            k2 = None
+            b2 = 0
+            x = x3
+            k1 = (y2 - y1) * 1.0 / (x2 - x1)  # 计算k1,由于点均为整数，需要进行浮点数转化
+            b1 = y1 * 1.0 - x1 * k1 * 1.0  # 整型转浮点型是关键
+            y = k1 * x * 1.0 + b1 * 1.0
+        elif (x2 - x1) == 0:
+            k1 = None
+            b1 = 0
+            x = x1
+            k2 = (y4 - y3) * 1.0 / (x4 - x3)
+            b2 = y3 * 1.0 - x3 * k2 * 1.0
+            y = k2 * x * 1.0 + b2 * 1.0
+        else:
+            k1 = (y2 - y1) * 1.0 / (x2 - x1)  # 计算k1,由于点均为整数，需要进行浮点数转化
+            k2 = (y4 - y3) * 1.0 / (x4 - x3)  # 斜率存在操作
+            b1 = y1 * 1.0 - x1 * k1 * 1.0  # 整型转浮点型是关键
+            b2 = y3 * 1.0 - x3 * k2 * 1.0
+            x = (b2 - b1) * 1.0 / (k1 - k2)
+            y = k1 * x * 1.0 + b1 * 1.0
+        return [x, y]
+
+    # line1 = [0, 4, 0, 2]
+    # line2 = [2, 0, 3, 0]
+    # print(cross_point(line1, line2))
+
+    # 三角形三条边长度求第二条边对角角度
     def caculate_from_triangle(self, line_a, line_b, line_c):
         """
         通过三角形三条边，利用三角函数计算cosB的值，再利用反余弦，求B的角度。
