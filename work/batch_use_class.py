@@ -4,6 +4,8 @@ from smartimage.functions.label_operate import SmartLabel, _transform_physical_p
 import SimpleITK as sitk
 import pandas as pd
 import numpy as np
+import cv2 as cv
+import traceback
 import random
 import shutil
 import math
@@ -14,8 +16,73 @@ import re
 import os
 
 
+# 文件夹处理
+class AbstractFolderProcess:
+    def __init__(self, **kwargs):
+        pass
+
+    def excute(self, input_folder, output_folder):
+        pass
+        raise NotImplementedError('Not implement!')
+
+    def _matchfile(self, input_folder, pattern):
+        file_names = os.listdir(input_folder)
+        names = list(filter(lambda s: re.findall(pattern, s), file_names))
+        if len(names) == 0:
+            raise Exception('未找到匹配文件！')
+        elif len(names) > 1:
+            raise Exception('匹配文件数大于1！')
+        elif len(names) == 1:
+            path = os.path.join(input_folder, names[0])
+            return path
+
+    def excute_finally(self, **kwargs):
+        pass
+
+
+# 批处理
+class AbsBatchProcess:
+    # def __init__(self, **kwargs):
+    #     pass
+
+    def run(self, input_path, fix_pattern, moving_pattern, output_path=None):
+        pass
+        raise NotImplementedError('Not implement!')
+
+    def _matchfile(self, input_folder, pattern):
+        file_names = os.listdir(input_folder)
+        names = list(filter(lambda s: re.findall(pattern, s), file_names))
+        if len(names) == 0:
+            raise Exception('未找到匹配文件！')
+        elif len(names) > 1:
+            raise Exception('匹配文件数大于1！')
+        elif len(names) == 1:
+            path = os.path.join(input_folder, names[0])
+            return path
+
+
+"""
+import traceback
+import logging
+
+logging.basicConfig(filename='log.txt', level=logging.DEBUG,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+
+try:
+    raise Exception('发生异常！')
+except:
+    # 自己定义一个文件
+    # errorFile = open('log.txt', 'a')
+    # errorFile.write(traceback.format_exc())
+    # errorFile.close()
+
+    # python标准日志维护工具
+    logging.debug(traceback.format_exc())
+"""
+
+
 # 正则匹配单个文件
-def matchfile(self, input_folder, pattern):
+def _matchfile(input_folder, pattern):
     file_names = os.listdir(input_folder)
     names = list(filter(lambda s: re.findall(pattern, s), file_names))
     if len(names) == 0:
@@ -25,6 +92,48 @@ def matchfile(self, input_folder, pattern):
     elif len(names) == 1:
         path = os.path.join(input_folder, names[0])
         return path
+
+
+# 多个正则匹配多个文件
+def _matchfiles(input_folder, input_patterns):
+    tmp = []
+    res = []
+    file_names = os.listdir(input_folder)
+    patterns = input_patterns.split(',')
+    for pattern in patterns:
+        names = list(filter(lambda s: re.findall(pattern, s), file_names))
+        tmp += names
+    if len(tmp) == 0:
+        raise Exception('未找到匹配文件！')
+    for i in range(len(tmp)):
+        path = os.path.join(input_folder, tmp[i])
+        res.append(path)
+    return res
+
+
+# 修改文件图像类型名
+def _update_image_type_name(input_name: str, tag: str):
+    tmp_name = input_name.split('/')[-1]
+    file_name_list = tmp_name.split('__')
+    if len(file_name_list) == 1:
+        return '__'.join(file_name_list)
+    else:
+        file_name = file_name_list[1]
+        if file_name == 'nan':
+            file_name_list[1] = tag
+        else:
+            file_name_list[1] += '-' + tag
+        file_name_list = '__'.join(file_name_list)
+        return file_name_list
+
+
+# 设置输出路径
+def _set_output_path(self, input_path: str, output_path: str):
+    self.input_path = input_path
+    self.output_path = output_path
+    if not self.output_path:
+        self.output_path = self.input_path
+    os.makedirs(self.output_path, exist_ok=True)
 
 
 # 计算夹角角度-2D
@@ -505,6 +614,7 @@ class CaculateAngle_3D:
 #                     'PateloFemoralIndex': patella_index}
 #         return res_dict
 # 髌骨计算类
+# 髌骨计算
 class KneeJson:
 
     def _init(self, input_path, **kwargs):
@@ -878,14 +988,14 @@ class KneeJson:
 
 # 框架外统计(配置文件）
 class OutsideCreatMeasurement:
-    def remove_space(self, list1):
+    def _remove_space(self, list1):
         list2 = []
         for i in list1:
             i = i.strip()
             list2.append(i)
         return list2
 
-    def concat_alldata_csv(self, input_path, output_path):
+    def _concat_alldata_csv(self, input_path, output_path):
         if os.path.exists(output_path):
             print('文件已存在！')
         else:
@@ -904,7 +1014,7 @@ class OutsideCreatMeasurement:
             pdf.to_csv(output_path, na_rep='NA')
             print('请查看clinical_csv目录，目标文件已生成！')
 
-    def concat_partdata_csv(self, folders_path, output_dir, images_re, labels_re, plabels_re):
+    def _concat_partdata_csv(self, folders_path, output_dir, images_re, labels_re, plabels_re):
         """
         输入（test，train，validate）上层文件夹路径，返回每个image的csv格式文件
         :param folder_path: （test，train，validate）上层文件夹路径
@@ -965,11 +1075,11 @@ class OutsideCreatMeasurement:
         images_re = image_patterns.split(',')
         labels_re = label_patterns.split(',')
         plabels_re = plabel_patterns.split(',')
-        image_patterns = self.remove_space(images_re)
-        label_patterns = self.remove_space(labels_re)
-        plabel_patterns = self.remove_space(plabels_re)
-        self.concat_partdata_csv(input_path, output_dir, image_patterns, label_patterns, plabel_patterns)
-        self.concat_alldata_csv(output_dir, output_path)
+        image_patterns = self._remove_space(images_re)
+        label_patterns = self._remove_space(labels_re)
+        plabel_patterns = self._remove_space(plabels_re)
+        self._concat_partdata_csv(input_path, output_dir, image_patterns, label_patterns, plabel_patterns)
+        self._concat_alldata_csv(output_dir, output_path)
         if continue_process_flag:
             try:
                 config_dict = read_config_return_dict(kwargs.get('batch_csv_process_path'))
@@ -982,11 +1092,13 @@ class OutsideCreatMeasurement:
             print('不进行Measurement.csv后续处理。')
 
 
-# 旧 CT MR图像时间，类型排序
+# CT MR图像时间，类型排序
 class SortImageName:
+
     def __init__(self):
         self.input_path = None
         self.output_path = None
+        self.output_file_mode = None
 
     def get_all_file_Anumber(self):
         res_list = []
@@ -1012,6 +1124,7 @@ class SortImageName:
             file_name = '__'.join(file_name_list)
             image_time_json = file_name + '.json'
             image_time_json_path = os.path.join(self.output_path, dir, image_time_json)
+            print(image_time_json_path)
             with open(image_time_json_path, 'r', encoding='utf8')as fp:
                 json_data = json.load(fp)
             image_time = json_data[0]['0008|0032']
@@ -1052,22 +1165,22 @@ class SortImageName:
             path = os.path.join(input_folder, names[0])
             return path
 
-    def _matchfile(self, input_folder, pattern):
-        # file_names = os.listdir(input_folder)
-        # names = list(filter(lambda s: re.findall(pattern, s), file_names))
-        # return names
-        names = []
-        index = []
-        dir_names = sorted(os.listdir(input_folder))
-        for dir in range(len(dir_names)):
-            dir_path = os.path.join(input_folder, dir_names[dir])
-            file_names = os.listdir(dir_path)
-            name = list(filter(lambda s: re.findall(pattern, s), file_names))
-            for i in range(len(name)):
-                name[i] = os.path.join(dir_path, name[i])
-                index.append(dir)
-            names += name
-        return names, index
+    # def _matchfile(self, input_folder, pattern):
+    #     # file_names = os.listdir(input_folder)
+    #     # names = list(filter(lambda s: re.findall(pattern, s), file_names))
+    #     # return names
+    #     names = []
+    #     index = []
+    #     dir_names = sorted(os.listdir(input_folder))
+    #     for dir in range(len(dir_names)):
+    #         dir_path = os.path.join(input_folder, dir_names[dir])
+    #         file_names = os.listdir(dir_path)
+    #         name = list(filter(lambda s: re.findall(pattern, s), file_names))
+    #         for i in range(len(name)):
+    #             name[i] = os.path.join(dir_path, name[i])
+    #             index.append(dir)
+    #         names += name
+    #     return names, index
 
     def get_same_Anumber_image_type(self, input_list, json_name):
         res = []
@@ -1079,6 +1192,11 @@ class SortImageName:
             type_number = json_data['class_array'].index(1)
             image_type = json_data['class_names'][type_number]
             res.append(image_type)
+        return res
+
+    def _folder_get_same_Anumber_image_type(self, input_list):
+        res = []
+        print(input_list)
         return res
 
     def image_type_sort(self, time_sort_image_list, input_list, reference_head, reference_foot, no_reference):
@@ -1097,8 +1215,7 @@ class SortImageName:
             for no in no_reference:
                 if no in input_list[n]:
                     tmp_no_list.append(n)
-        # res_correct_list = list(set(res_correct_list))
-        # print(res_correct_list)
+
         if not tmp_no_list:
             if res_correct_list == sorted(res_correct_list):
                 correct_list = time_sort_image_list
@@ -1112,6 +1229,9 @@ class SortImageName:
         return correct_list, error_list
 
     def update_image_type(self, input_list, json_name):
+        count = 1
+        current_image_type = ''
+        new_dir_path = ''
         for dir in input_list:
             dir_path = os.path.join(self.output_path, 'correct', dir)
             json_file = self.matchfile(dir_path, json_name)
@@ -1119,16 +1239,21 @@ class SortImageName:
                 json_data = json.load(fp)
             type_number = json_data['class_array'].index(1)
             image_type = json_data['class_names'][type_number]
+
+            if current_image_type == image_type:
+                count += 1
+            else:
+                current_image_type = image_type
+                count = 1
             update_dir_name_list = dir.split('__')
             if update_dir_name_list[2] == 'nan':
-                update_dir_name_list[2] = image_type
+                update_dir_name_list[2] = image_type + '-%s' % count + '--' + update_dir_name_list[2]
             else:
-                update_dir_name_list[2] = update_dir_name_list[2] + '-' + image_type
+                update_dir_name_list[2] = image_type + '-%s' % count + '--' + update_dir_name_list[2]
             update_dir_name = '__'.join(update_dir_name_list)
             tmp_name_list = update_dir_name_list
             update_file_name_list = tmp_name_list[1:]
             update_file_name = '__'.join(update_file_name_list)
-            # json_data['class_names'][type_number] = update_dir_name_list[2]
             folder_path = json_data['folder_path'].split('/')
             folder_path[-1] = update_dir_name
             json_data['folder_path'] = '/'.join(folder_path)
@@ -1141,6 +1266,9 @@ class SortImageName:
             os.rename(os.path.join(dir_path, before_file_name + '.nii.gz'),
                       os.path.join(dir_path, update_file_name + '.nii.gz'))
             os.rename(dir_path, os.path.join(self.output_path, 'correct', update_dir_name))
+            if self.output_file_mode:
+                shutil.move(os.path.join(self.output_path, 'correct', update_dir_name),
+                            os.path.join(self.output_path, 'correct', image_type, update_dir_name))
 
     def update_sorted_image_type(self, no_reference, json_name):
         input_path = os.path.join(self.output_path, 'correct')
@@ -1204,7 +1332,35 @@ class SortImageName:
                 for file in file_list:
                     file_path = os.path.join(dir_path, file)
                     if os.path.isfile(file_path):
-                        os.link(file_path, os.path.join(output, file))
+                        if os.path.exists(os.path.join(output, file)):
+                            break
+                        else:
+                            os.link(file_path, os.path.join(output, file))
+
+    def _folder_link_save(self, output_path):
+        input_path_dir = os.listdir(self.input_path)
+        if not output_path:
+            output_path = os.path.join(self.input_path, 'tmp_sort_dir')
+        self.output_path = output_path
+        for image_type in input_path_dir:
+            image_type_path = os.path.join(self.input_path, image_type)
+            if image_type == 'tmp_sort_dir':
+                continue
+            if os.path.isdir(image_type_path):
+                dirs = os.listdir(image_type_path)
+                for dir in dirs:
+                    dir_path = os.path.join(image_type_path, dir)
+                    if os.path.isdir(dir_path):
+                        output = os.path.join(output_path, image_type, dir)
+                        os.makedirs(output, exist_ok=True)
+                        file_list = os.listdir(dir_path)
+                        for file in file_list:
+                            file_path = os.path.join(dir_path, file)
+                            if os.path.isfile(file_path):
+                                if os.path.exists(os.path.join(output, file)):
+                                    break
+                                else:
+                                    os.link(file_path, os.path.join(output, file))
 
     def link_saves(self, output_path):
         # 图像类型文件夹
@@ -1240,140 +1396,107 @@ class SortImageName:
         for j in error:
             shutil.move(os.path.join(self.output_path, j), os.path.join(self.output_path, 'error', j))
 
-    def get_folder_all_Anumber(self):
+    # def get_folder_all_Anumber(self):
+    #     Anumber_list = []
+    #     type_dirs = os.listdir(self.input_path)
+    #     for type_dir in type_dirs:
+    #         type_dir_path = os.path.join(self.input_path, type_dir)
+    #         if os.path.isdir(type_dir_path):
+    #             dir_list = os.listdir(type_dir_path)
+    #             for dir in dir_list:
+    #                 if str(dir.split('__')[0]).startswith('A'):
+    #                     Anumber_list.append(dir.split('__')[0])
+    #     Anumber_list = list(set(Anumber_list))
+    #     return Anumber_list
+    ''
+
+    # def fix_image_type_sort(self):
+    #     Anumber_list = self.get_folder_all_Anumber()
+    #     os.makedirs(os.path.join(self.output_path, 'correct'), exist_ok=True)
+    #     os.makedirs(os.path.join(self.output_path, 'error'), exist_ok=True)
+    #     for Anumber in Anumber_list:
+    #         correct_list = []
+    #         error_list = []
+    #         same_Anumber_dir_list = []
+    #         image_time_list = []
+    #         try:
+    #             anumbers, index_list = self._matchfile(self.output_path, Anumber)
+    #             for anumber in anumbers:
+    #                 # A号文件夹绝对路径
+    #                 dir_path = anumber
+    #                 if os.path.isdir(dir_path):
+    #                     same_Anumber_dir_list.append(dir_path)
+    #                     file_name = anumber.split('__')[1:]
+    #                     file_name = '__'.join(file_name)
+    #                     file_path = os.path.join(dir_path, file_name + '.json')
+    #                     if os.path.isfile(file_path):
+    #                         with open(file_path, 'r', encoding='utf8') as fp:
+    #                             json_data = json.load(fp)
+    #                             if type(json_data) == list:
+    #                                 image_time = json_data[0]['0008|0032']
+    #                                 image_time_list.append(image_time)
+    #                             elif type(json_data) == dict:
+    #                                 image_time = json_data['0008|0032']
+    #                                 image_time_list.append(image_time)
+    #             flag = True
+    #             un_image_time_list = image_time_list
+    #             if un_image_time_list:
+    #                 if len(index_list) == 1:
+    #                     pass
+    #                 elif len(index_list) == 2:
+    #                     if un_image_time_list[1] >= un_image_time_list[0]:
+    #                         pass
+    #                     else:
+    #                         flag = False
+    #                 else:
+    #                     for i in range(len(index_list) - 1):
+    #                         if un_image_time_list[i + 1] >= un_image_time_list[i]:
+    #                             pass
+    #                         else:
+    #                             flag = False
+    #             if flag:
+    #                 correct_list += same_Anumber_dir_list
+    #             else:
+    #                 error_list += same_Anumber_dir_list
+    #
+    #             for c_dir_index in range(len(correct_list)):
+    #                 dir_path = correct_list[c_dir_index].split('/')
+    #                 dir_path.insert(-2, 'correct')
+    #                 updata_type = dir_path[-2]
+    #                 moved_dir_path = '/'.join(dir_path)
+    #                 file_name = dir_path[-1].split('__')[1:]
+    #                 file_name = '__'.join(file_name)
+    #                 update_dir_name = dir_path[-1].split('__')
+    #                 if update_dir_name[2] == 'nan':
+    #                     update_dir_name[2] = updata_type
+    #                 else:
+    #                     update_dir_name[2] = update_dir_name[2] + updata_type
+    #                 update_dir_name = '__'.join(update_dir_name)
+    #                 update_file_name = update_dir_name.split('__')[1:]
+    #                 update_file_name = '__'.join(update_file_name)
+    #                 shutil.move(correct_list[c_dir_index], moved_dir_path)
+    #                 os.rename(os.path.join(moved_dir_path, file_name + '.json'),
+    #                           os.path.join(moved_dir_path, update_file_name + '.json'))
+    #                 os.rename(os.path.join(moved_dir_path, file_name + '.nii.gz'),
+    #                           os.path.join(moved_dir_path, update_file_name + '.nii.gz'))
+    #                 update_dir_path = correct_list[c_dir_index].split('/')[:-1]
+    #                 update_dir_path.insert(-1, 'correct')
+    #                 update_dir_path = '/'.join(update_dir_path)
+    #                 os.rename(moved_dir_path, os.path.join(update_dir_path, update_dir_name))
+    #
+    #             for e_dir in error_list:
+    #                 move_dir = e_dir.split('/')
+    #                 move_dir.insert(-2, 'error')
+    #                 move_dir = '/'.join(move_dir)
+    #                 shutil.move(e_dir, move_dir)
+    #         except Exception as e:
+    #             print(Anumber, e)
+
+    def fix_get_folder_all_Anumber(self):
         Anumber_list = []
         type_dirs = os.listdir(self.input_path)
         for type_dir in type_dirs:
             type_dir_path = os.path.join(self.input_path, type_dir)
-            if os.path.isdir(type_dir_path):
-                dir_list = os.listdir(type_dir_path)
-                for dir in dir_list:
-                    if str(dir.split('__')[0]).startswith('A'):
-                        Anumber_list.append(dir.split('__')[0])
-        Anumber_list = list(set(Anumber_list))
-        return Anumber_list
-
-    def fix_image_type_sort(self):
-        Anumber_list = self.get_folder_all_Anumber()
-        os.makedirs(os.path.join(self.output_path, 'correct'), exist_ok=True)
-        os.makedirs(os.path.join(self.output_path, 'error'), exist_ok=True)
-        for Anumber in Anumber_list:
-            correct_list = []
-            error_list = []
-            same_Anumber_dir_list = []
-            image_time_list = []
-            try:
-                anumbers, index_list = self._matchfile(self.output_path, Anumber)
-                for anumber in anumbers:
-                    # A号文件夹绝对路径
-                    dir_path = anumber
-                    if os.path.isdir(dir_path):
-                        same_Anumber_dir_list.append(dir_path)
-                        file_name = anumber.split('__')[1:]
-                        file_name = '__'.join(file_name)
-                        file_path = os.path.join(dir_path, file_name + '.json')
-                        if os.path.isfile(file_path):
-                            with open(file_path, 'r', encoding='utf8') as fp:
-                                json_data = json.load(fp)
-                                if type(json_data) == list:
-                                    image_time = json_data[0]['0008|0032']
-                                    image_time_list.append(image_time)
-                                elif type(json_data) == dict:
-                                    image_time = json_data['0008|0032']
-                                    image_time_list.append(image_time)
-                flag = True
-                un_image_time_list = image_time_list
-                if un_image_time_list:
-                    if len(index_list) == 1:
-                        pass
-                    elif len(index_list) == 2:
-                        if un_image_time_list[1] >= un_image_time_list[0]:
-                            pass
-                        else:
-                            flag = False
-                    else:
-                        for i in range(len(index_list) - 1):
-                            if un_image_time_list[i + 1] >= un_image_time_list[i]:
-                                pass
-                            else:
-                                flag = False
-                if flag:
-                    correct_list += same_Anumber_dir_list
-                else:
-                    error_list += same_Anumber_dir_list
-
-                for c_dir_index in range(len(correct_list)):
-                    dir_path = correct_list[c_dir_index].split('/')
-                    dir_path.insert(-2, 'correct')
-                    updata_type = dir_path[-2]
-                    moved_dir_path = '/'.join(dir_path)
-                    file_name = dir_path[-1].split('__')[1:]
-                    file_name = '__'.join(file_name)
-                    update_dir_name = dir_path[-1].split('__')
-                    if update_dir_name[2] == 'nan':
-                        update_dir_name[2] = updata_type
-                    else:
-                        update_dir_name[2] = update_dir_name[2] + updata_type
-                    update_dir_name = '__'.join(update_dir_name)
-                    update_file_name = update_dir_name.split('__')[1:]
-                    update_file_name = '__'.join(update_file_name)
-                    shutil.move(correct_list[c_dir_index], moved_dir_path)
-                    os.rename(os.path.join(moved_dir_path, file_name + '.json'),
-                              os.path.join(moved_dir_path, update_file_name + '.json'))
-                    os.rename(os.path.join(moved_dir_path, file_name + '.nii.gz'),
-                              os.path.join(moved_dir_path, update_file_name + '.nii.gz'))
-                    update_dir_path = correct_list[c_dir_index].split('/')[:-1]
-                    update_dir_path.insert(-1, 'correct')
-                    update_dir_path = '/'.join(update_dir_path)
-                    os.rename(moved_dir_path, os.path.join(update_dir_path, update_dir_name))
-
-                for e_dir in error_list:
-                    move_dir = e_dir.split('/')
-                    move_dir.insert(-2, 'error')
-                    move_dir = '/'.join(move_dir)
-                    shutil.move(e_dir, move_dir)
-            except Exception as e:
-                print(Anumber, e)
-
-    def run(self, input_path, output_path, reference_head, reference_foot, no_reference, json_name,
-            fix_image_type=False, **kwargs):
-        self.input_path = input_path
-        if fix_image_type:
-            self.link_saves(output_path)
-            self.fix_image_type_sort()
-        else:
-            self.link_save(output_path)
-            all_Anumber = self.get_all_file_Anumber()
-            for Anumber in all_Anumber:
-                reference_head = reference_head.split(',')
-                reference_foot = reference_foot.split(',')
-                no_reference = no_reference.split(',')
-                file_list = self.get_same_Anumber_imagefile(Anumber)
-                try:
-                    time_sort = self.image_time_sort(file_list)
-                    type_list = self.get_same_Anumber_image_type(time_sort, json_name)
-                    correct_list, error_list = self.image_type_sort(time_sort, type_list, reference_head,
-                                                                    reference_foot,
-                                                                    no_reference)
-                    self.move_output(correct_list, error_list)
-                    self.update_image_type(correct_list, json_name)
-                    self.update_sorted_image_type(no_reference, json_name)
-                except Exception as e:
-                    print(Anumber, e)
-        print('图像排序后输出的文件夹：', self.output_path)
-
-
-# CT MR图像时间，类型排序
-class NewSortImageName:
-    def __init__(self):
-        self.input_path = None
-        self.output_path = None
-
-    def get_folder_all_Anumber(self, input_path: str):
-        Anumber_list = []
-        type_dirs = os.listdir(input_path)
-        for type_dir in type_dirs:
-            type_dir_path = os.path.join(input_path, type_dir)
             if os.path.isdir(type_dir_path):
                 dir_list = os.listdir(type_dir_path)
                 for dir in dir_list:
@@ -1392,7 +1515,16 @@ class NewSortImageName:
                     res.append(folder_path)
         return res
 
-    def image_time_sort(self, input_list: list):
+    # def _folder_get_all_same_anumber_file(self, input_list, Anumber):
+    #     res = []
+    #     for folder in input_list:
+    #         folder_path = os.path.join(self.input_path, folder)
+    #         if Anumber in folder:
+    #             if os.path.isdir(folder_path):
+    #                 res.append(folder_path)
+    #     return res
+
+    def fix_image_time_sort(self, input_list: list):
         image_time_list = []
         image_tag_list = []
         for folder_path in input_list:
@@ -1439,7 +1571,7 @@ class NewSortImageName:
             json_data = json.load(fp)
         image_time = json_data[0]['0008|0032']
         image_tag = json_data[0]['0008|0033']
-        return image_time, image_tag
+        return float(image_time), float(image_tag)
 
     def update_correct_name(self, input_list: list):
         count = 1
@@ -1449,22 +1581,29 @@ class NewSortImageName:
             image_type = image_type_list[-2] + '-%s' % count
             dir_name = image_type_list[-1]
             dir_name_list = dir_name.split('__')
-            dir_name_list[2] = image_type
+            dir_name_list[2] = image_type + '--' + dir_name_list[2]
             dir_name = '__'.join(dir_name_list)
-            image_type_list[-1] = dir_name
-            image_type_list.insert(-2, 'correct')
-            tmp = '/'.join(image_type_list)
-            res.append(tmp)
+            if self.output_file_mode:
+                tmp = os.path.join(self.output_path, 'correct', '-'.join(image_type.split('-')[:-1]), dir_name)
+                res.append(tmp)
+            else:
+                tmp = os.path.join(self.output_path, 'correct', dir_name)
+                res.append(tmp)
             count += 1
         return res
 
     def update_error_name(self, input_list):
         res = []
         for i in input_list:
-            folder_path_list = i.split('/')
-            folder_path_list.insert(-2, 'error')
-            folder_path = '/'.join(folder_path_list)
-            res.append(folder_path)
+            folder_name = i.split('/')[-2:]
+            folder_name = '/'.join(folder_name)
+            if self.output_file_mode:
+                folder_path = os.path.join(self.output_path, 'error', folder_name)
+                res.append(folder_path)
+            else:
+                new_folder_name = i.split('/')[-1]
+                folder_path = os.path.join(self.output_path, 'error', new_folder_name)
+                res.append(folder_path)
         return res
 
     def get_file_name(self, folder_path: str):
@@ -1474,111 +1613,396 @@ class NewSortImageName:
         return file_name
 
     def link_correct(self, old_list: list, new_list: list):
+        flag = False
         for i in range(len(old_list)):
             old_file_name = self.get_file_name(old_list[i])
             new_file_name = self.get_file_name(new_list[i])
-            os.makedirs(new_list[i])
+            os.makedirs(new_list[i], exist_ok=True)
             file_list = os.listdir(old_list[i])
             for file in file_list:
                 file_path = os.path.join(old_list[i], file)
                 new_file_path = os.path.join(new_list[i], file)
-                os.link(file_path, new_file_path)
-                os.rename(os.path.join(new_list[i], old_file_name + '.nii.gz'),
-                          os.path.join(new_list[i], new_file_name + '.nii.gz'))
-                os.rename(os.path.join(new_list[i], old_file_name + '.nii.gz'),
-                          os.path.join(new_list[i], new_file_name + '.json'))
+                if os.path.exists(new_file_path):
+                    break
+                else:
+                    os.link(file_path, new_file_path)
+                    flag = True
+            if flag:
+                os.renames(os.path.join(new_list[i], old_file_name + '.nii.gz'),
+                           os.path.join(new_list[i], new_file_name + '.nii.gz'))
+                os.renames(os.path.join(new_list[i], old_file_name + '.json'),
+                           os.path.join(new_list[i], new_file_name + '.json'))
 
     def link_error(self, old_list: list, new_list: list):
         for i in range(len(old_list)):
-            os.makedirs(new_list[i])
+            os.makedirs(new_list[i], exist_ok=True)
             file_list = os.listdir(old_list[i])
             for file in file_list:
                 file_path = os.path.join(old_list[i], file)
                 new_file_path = os.path.join(new_list[i], file)
-                os.link(file_path, new_file_path)
+                if os.path.exists(new_file_path):
+                    break
+                else:
+                    os.link(file_path, new_file_path)
+
+    def _get_same_type_folder_path(self, image_type_folder_list, number):
+        update_list = []
+        tmp_list = []
+        for image_type_folder in image_type_folder_list:
+            image_type_path = os.path.join(self.input_path, image_type_folder)
+            if os.path.isdir(image_type_path):
+                folder_list = self.get_all_same_anumber_file(image_type_path, str(number))
+                res = self.fix_image_time_sort(folder_list)
+                if res:
+                    update_list.append(res)
+                    tmp_list += res
+        return update_list, tmp_list
 
     def fix_image_type_sort(self):
-        pass
-        # Anumber_list = self.get_folder_all_Anumber()
-        # os.makedirs(os.path.join(self.output_path, 'correct'), exist_ok=True)
-        # os.makedirs(os.path.join(self.output_path, 'error'), exist_ok=True)
-        # for Anumber in Anumber_list:
-        #     correct_list = []
-        #     error_list = []
-        #     same_Anumber_dir_list = []
-        #     image_time_list = []
-        #     try:
-        #         anumbers, index_list = self._matchfile(self.output_path, Anumber)
-        #         for anumber in anumbers:
-        #             # A号文件夹绝对路径
-        #             dir_path = anumber
-        #             if os.path.isdir(dir_path):
-        #                 same_Anumber_dir_list.append(dir_path)
-        #                 file_name = anumber.split('__')[1:]
-        #                 file_name = '__'.join(file_name)
-        #                 file_path = os.path.join(dir_path, file_name + '.json')
-        #                 if os.path.isfile(file_path):
-        #                     with open(file_path, 'r', encoding='utf8') as fp:
-        #                         json_data = json.load(fp)
-        #                         if type(json_data) == list:
-        #                             image_time = json_data[0]['0008|0032']
-        #                             image_time_list.append(image_time)
-        #                         elif type(json_data) == dict:
-        #                             image_time = json_data['0008|0032']
-        #                             image_time_list.append(image_time)
-        #         flag = True
-        #         un_image_time_list = image_time_list
-        #         if un_image_time_list:
-        #             if len(index_list) == 1:
-        #                 pass
-        #             elif len(index_list) == 2:
-        #                 if un_image_time_list[1] >= un_image_time_list[0]:
-        #                     pass
-        #                 else:
-        #                     flag = False
-        #             else:
-        #                 for i in range(len(index_list) - 1):
-        #                     if un_image_time_list[i + 1] >= un_image_time_list[i]:
-        #                         pass
-        #                     else:
-        #                         flag = False
-        #         if flag:
-        #             correct_list += same_Anumber_dir_list
-        #         else:
-        #             error_list += same_Anumber_dir_list
-        #
-        #         for c_dir_index in range(len(correct_list)):
-        #             dir_path = correct_list[c_dir_index].split('/')
-        #             dir_path.insert(-2, 'correct')
-        #             updata_type = dir_path[-2]
-        #             moved_dir_path = '/'.join(dir_path)
-        #             file_name = dir_path[-1].split('__')[1:]
-        #             file_name = '__'.join(file_name)
-        #             update_dir_name = dir_path[-1].split('__')
-        #             if update_dir_name[2] == 'nan':
-        #                 update_dir_name[2] = updata_type
-        #             else:
-        #                 update_dir_name[2] = update_dir_name[2] + updata_type
-        #             update_dir_name = '__'.join(update_dir_name)
-        #             update_file_name = update_dir_name.split('__')[1:]
-        #             update_file_name = '__'.join(update_file_name)
-        #             shutil.move(correct_list[c_dir_index], moved_dir_path)
-        #             os.rename(os.path.join(moved_dir_path, file_name + '.json'),
-        #                       os.path.join(moved_dir_path, update_file_name + '.json'))
-        #             os.rename(os.path.join(moved_dir_path, file_name + '.nii.gz'),
-        #                       os.path.join(moved_dir_path, update_file_name + '.nii.gz'))
-        #             update_dir_path = correct_list[c_dir_index].split('/')[:-1]
-        #             update_dir_path.insert(-1, 'correct')
-        #             update_dir_path = '/'.join(update_dir_path)
-        #             os.rename(moved_dir_path, os.path.join(update_dir_path, update_dir_name))
-        #
-        #         for e_dir in error_list:
-        #             move_dir = e_dir.split('/')
-        #             move_dir.insert(-2, 'error')
-        #             move_dir = '/'.join(move_dir)
-        #             shutil.move(e_dir, move_dir)
-        #     except Exception as e:
-        #         print(Anumber, e)
+        os.makedirs(os.path.join(self.output_path, 'correct'), exist_ok=True)
+        os.makedirs(os.path.join(self.output_path, 'error'), exist_ok=True)
+        all_Anumber = self.fix_get_folder_all_Anumber()
+        image_type_folder_list = os.listdir(self.input_path)
+        image_type_folder_list = sorted(image_type_folder_list)
+        for number in all_Anumber:
+            correct_list = []
+            update_list = []
+            error_list = []
+            tmp_list = []
+            for image_type_folder in image_type_folder_list:
+                image_type_path = os.path.join(self.input_path, image_type_folder)
+                if os.path.isdir(image_type_path):
+                    folder_list = self.get_all_same_anumber_file(image_type_path, str(number))
+                    res = self.fix_image_time_sort(folder_list)
+                    if res:
+                        update_list.append(res)
+                        tmp_list += res
+            if len(update_list) == 1:
+                correct_list = update_list
+            elif len(tmp_list) == 1:
+                correct_list = update_list
+            elif len(update_list) > 1:
+                for i in range(len(update_list) - 1):
+                    before_image_time, before_image_time_tag = self.get_image_time(update_list[i][-1])
+                    after_image_time, after_image_time_tag = self.get_image_time(update_list[i + 1][0])
+                    if before_image_time > after_image_time:
+                        error_list = update_list
+                        break
+                    elif before_image_time == after_image_time:
+                        if before_image_time_tag > after_image_time_tag:
+                            error_list = update_list
+                            break
+            if not error_list:
+                correct_list = update_list
+            for j in correct_list:
+                correct_folder_list = self.update_correct_name(j)
+                self.link_correct(j, correct_folder_list)
+            for k in error_list:
+                error_folder_list = self.update_error_name(k)
+                self.link_error(k, error_folder_list)
+
+    def _folder_fix_image_type_sort(self, reference_head=None, reference_foot=None, no_reference=None):
+        os.makedirs(os.path.join(self.output_path, 'correct'), exist_ok=True)
+        os.makedirs(os.path.join(self.output_path, 'error'), exist_ok=True)
+        all_Anumber = self.fix_get_folder_all_Anumber()
+        image_type_folder_list = os.listdir(self.input_path)
+        image_type_folder_list = sorted(image_type_folder_list)
+        reference = reference_head.split(',') + reference_foot.split(',')
+        no_reference = no_reference.split(',')
+        for number in all_Anumber:
+            correct_list = []
+            # update_list = []
+            error_list = []
+            # tmp_list = []
+            head_path = ''
+            foot_path = ''
+            no_time_list = []
+            head_image_time = None
+            foot_image_time = None
+            # 所有文件路径
+            update_list, tmp_list = self._get_same_type_folder_path(image_type_folder_list, number)
+            ref_update_list, ref_tmp_list = self._get_same_type_folder_path(reference, number)
+            no_update_list, no_tmp_list = self._get_same_type_folder_path(no_reference, number)
+            head_update, head_tmp = self._get_same_type_folder_path([reference_head.split(',')[-1]], number)
+            if head_update:
+                head_res = self.fix_image_time_sort(head_update[0])
+                # print(number, res[-1])
+                head_path = head_res[-1]
+                head_image_time, head_image_tag = self.get_image_time(head_path)
+                # print(number, head_image_time, head_image_tag)
+            foot_updata, foot_tmp = self._get_same_type_folder_path([reference_foot.split(',')[0]], number)
+            if foot_updata:
+                foot_res = self.fix_image_time_sort(foot_updata[0])
+                # print(number, res[0])
+                foot_path = foot_res[0]
+                foot_image_time, foot_image_tag = self.get_image_time(foot_path)
+                # print(number, foot_image_time, foot_image_tag)
+
+            for no_tmp in no_tmp_list:
+                no_image_time, no_image_tag = self.get_image_time(no_tmp)
+                no_time_list.append(no_image_time)
+            # if len(update_list) == 1:
+            #     correct_list = update_list
+            # elif len(tmp_list) == 1:
+            #     correct_list = update_list
+            # elif len(ref_update_list) > 1:
+            #     for i in range(len(ref_update_list) - 1):
+            #         before_image_time, before_image_time_tag = self.get_image_time(ref_update_list[i][-1])
+            #         after_image_time, after_image_time_tag = self.get_image_time(ref_update_list[i + 1][0])
+            #         if before_image_time > after_image_time:
+            #             error_list = update_list
+            #             break
+            #         elif before_image_time == after_image_time:
+            #             if before_image_time_tag > after_image_time_tag:
+            #                 error_list = update_list
+            #                 break
+            for j in no_time_list:
+                if head_image_time:
+                    if head_image_time < j:
+                        error_list = update_list
+                        break
+                if foot_image_time:
+                    if foot_image_time > j:
+                        error_list = update_list
+                        break
+
+            if len(update_list) == 1:
+                correct_list = update_list
+            elif len(tmp_list) == 1:
+                correct_list = update_list
+            elif len(ref_update_list) > 1:
+                for i in range(len(ref_update_list) - 1):
+                    before_image_time, before_image_time_tag = self.get_image_time(ref_update_list[i][-1])
+                    after_image_time, after_image_time_tag = self.get_image_time(ref_update_list[i + 1][0])
+                    if before_image_time > after_image_time:
+                        error_list = update_list
+                        break
+                    elif before_image_time == after_image_time:
+                        if before_image_time_tag > after_image_time_tag:
+                            error_list = update_list
+                            break
+            if not error_list:
+                correct_list = update_list
+            for j in correct_list:
+                correct_folder_list = self.update_correct_name(j)
+                self.link_correct(j, correct_folder_list)
+            for k in error_list:
+                error_folder_list = self.update_error_name(k)
+                self.link_error(k, error_folder_list)
+
+    def run(self, input_path, reference_head=None, reference_foot=None, no_reference=None, json_name=None,
+            fix_image_type=False, output_file_mode=False, fix_folder_type=False, output_path=None, **kwargs):
+        if not output_path:
+            output_path = input_path
+        self.output_path = output_path
+        self.input_path = input_path
+        self.output_file_mode = output_file_mode
+        if fix_image_type:
+            if fix_folder_type:
+                self._folder_fix_image_type_sort(reference_head, reference_foot, no_reference)
+            else:
+                self.fix_image_type_sort()
+        else:
+            self.link_save(output_path)
+            all_Anumber = self.get_all_file_Anumber()
+            for Anumber in all_Anumber:
+                reference_head = reference_head.split(',')
+                reference_foot = reference_foot.split(',')
+                no_reference = no_reference.split(',')
+                file_list = self.get_same_Anumber_imagefile(Anumber)
+                try:
+                    time_sort = self.image_time_sort(file_list)
+                    type_list = self.get_same_Anumber_image_type(time_sort, json_name)
+                    correct_list, error_list = self.image_type_sort(time_sort, type_list, reference_head,
+                                                                    reference_foot,
+                                                                    no_reference)
+                    self.move_output(correct_list, error_list)
+                    self.update_image_type(correct_list, json_name)
+                    self.update_sorted_image_type(no_reference, json_name)
+                except Exception as e:
+                    print(Anumber, e, traceback.print_exc())
+        print('图像排序后输出的文件夹：', self.output_path)
+
+
+# CT MR图像时间，类型排序
+# class NewSortImageName:
+#     def __init__(self):
+#         self.input_path = None
+#         self.output_path = None
+#
+#     def get_folder_all_Anumber(self):
+#         Anumber_list = []
+#         type_dirs = os.listdir(self.input_path)
+#         for type_dir in type_dirs:
+#             type_dir_path = os.path.join(self.input_path, type_dir)
+#             if os.path.isdir(type_dir_path):
+#                 dir_list = os.listdir(type_dir_path)
+#                 for dir in dir_list:
+#                     if str(dir.split('__')[0]).startswith('A'):
+#                         Anumber_list.append(dir.split('__')[0])
+#         Anumber_list = list(set(Anumber_list))
+#         return Anumber_list
+#
+#     def get_all_same_anumber_file(self, input_path, Anumber):
+#         res = []
+#         folders = os.listdir(input_path)
+#         for folder in folders:
+#             folder_path = os.path.join(input_path, folder)
+#             if Anumber in folder:
+#                 if os.path.isdir(folder_path):
+#                     res.append(folder_path)
+#         return res
+#
+#     def image_time_sort(self, input_list: list):
+#         image_time_list = []
+#         image_tag_list = []
+#         for folder_path in input_list:
+#             folder_name = folder_path.split('/')[-1]
+#             file_name_list = folder_name.split('__')[1:]
+#             file_name = '__'.join(file_name_list)
+#             json_path = os.path.join(folder_path, file_name + '.json')
+#             with open(json_path, 'r', encoding='utf8')as fp:
+#                 json_data = json.load(fp)
+#             image_time = json_data[0]['0008|0032']
+#             image_tag = json_data[0]['0008|0033']
+#             image_time_list.append(image_time)
+#             image_tag_list.append(image_tag)
+#         np_argsort_index = list(np.argsort(image_time_list))
+#         sort_index_list = sorted(image_time_list)
+#         tmp_list = []
+#         for i in image_time_list:
+#             if image_time_list.count(i) > 1:
+#                 tmp_list.append(i)
+#         list1 = []
+#         for j in set(tmp_list):
+#             for n in range(len(sort_index_list)):
+#                 if sort_index_list[n] == j:
+#                     list1.append(n)
+#             list2 = []
+#             for z in list1:
+#                 list2.append(image_tag_list[np_argsort_index[z]])
+#             np_sort_index_list2 = list(np.argsort(list2))
+#             for res_index in list1:
+#                 sort_index_list[res_index] = np_sort_index_list2[0]
+#                 np_sort_index_list2.pop(0)
+#         res = []
+#         for r in np_argsort_index:
+#             res.append(input_list[r])
+#         return res
+#
+#     def get_image_time(self, input_path):
+#         folder_path = input_path
+#         folder_name = folder_path.split('/')[-1]
+#         file_name_list = folder_name.split('__')[1:]
+#         file_name = '__'.join(file_name_list)
+#         json_path = os.path.join(folder_path, file_name + '.json')
+#         with open(json_path, 'r', encoding='utf8')as fp:
+#             json_data = json.load(fp)
+#         image_time = json_data[0]['0008|0032']
+#         image_tag = json_data[0]['0008|0033']
+#         return float(image_time), float(image_tag)
+#
+#     def update_correct_name(self, input_list: list):
+#         count = 1
+#         res = []
+#         for i in input_list:
+#             image_type_list = i.split('/')
+#             image_type = image_type_list[-2] + '-%s' % count
+#             dir_name = image_type_list[-1]
+#             dir_name_list = dir_name.split('__')
+#             dir_name_list[2] = image_type
+#             dir_name = '__'.join(dir_name_list)
+#             tmp = os.path.join(self.output_path, 'correct', dir_name)
+#             res.append(tmp)
+#             count += 1
+#         return res
+#
+#     def update_error_name(self, input_list):
+#         res = []
+#         for i in input_list:
+#             folder_name = i.split('/')[-2:]
+#             folder_name = '/'.join(folder_name)
+#             folder_path = os.path.join(self.output_path, 'error', folder_name)
+#             res.append(folder_path)
+#         return res
+#
+#     def get_file_name(self, folder_path: str):
+#         file_name_list = folder_path.split('/')[-1]
+#         file_name = file_name_list.split('__')[1:]
+#         file_name = '__'.join(file_name)
+#         return file_name
+#
+#     def link_correct(self, old_list: list, new_list: list):
+#         for i in range(len(old_list)):
+#             old_file_name = self.get_file_name(old_list[i])
+#             new_file_name = self.get_file_name(new_list[i])
+#             os.makedirs(new_list[i], exist_ok=True)
+#             file_list = os.listdir(old_list[i])
+#             for file in file_list:
+#                 file_path = os.path.join(old_list[i], file)
+#                 new_file_path = os.path.join(new_list[i], file)
+#                 os.link(file_path, new_file_path)
+#             os.renames(os.path.join(new_list[i], old_file_name + '.nii.gz'),
+#                        os.path.join(new_list[i], new_file_name + '.nii.gz'))
+#             os.renames(os.path.join(new_list[i], old_file_name + '.json'),
+#                        os.path.join(new_list[i], new_file_name + '.json'))
+#
+#     def link_error(self, old_list: list, new_list: list):
+#         for i in range(len(old_list)):
+#             os.makedirs(new_list[i], exist_ok=True)
+#             file_list = os.listdir(old_list[i])
+#             for file in file_list:
+#                 file_path = os.path.join(old_list[i], file)
+#                 new_file_path = os.path.join(new_list[i], file)
+#                 os.link(file_path, new_file_path)
+#
+#     # def fix_image_type_sort(self):
+#     #
+#     #     self.output_path = '/private/DATA/RES'
+#     #     os.makedirs(os.path.join(self.output_path, 'correct'), exist_ok=True)
+#     #     os.makedirs(os.path.join(self.output_path, 'error'), exist_ok=True)
+#     #     all_Anumber = s.get_folder_all_Anumber()
+#     #     # image_type_folders = os.listdir(input_path)
+#     #     image_type_folder_list = os.listdir(input_path)
+#     #     image_type_folder_list = sorted(image_type_folder_list)
+#     #     for number in all_Anumber:
+#     #         correct_list = []
+#     #         update_list = []
+#     #         error_list = []
+#     #         tmp_list = []
+#     #         for image_type_folder in image_type_folder_list:
+#     #             image_type_path = os.path.join(input_path, image_type_folder)
+#     #             if os.path.isdir(image_type_path):
+#     #                 folder_list = s.get_all_same_anumber_file(image_type_path, str(number))
+#     #                 res = s.image_time_sort(folder_list)
+#     #                 if res:
+#     #                     update_list.append(res)
+#     #                     tmp_list += res
+#     #         if len(update_list) == 1:
+#     #             correct_list = update_list
+#     #         elif len(tmp_list) == 1:
+#     #             correct_list = update_list
+#     #         elif len(update_list) > 1:
+#     #             for i in range(len(update_list) - 1):
+#     #                 before_image_time, before_image_time_tag = s.get_image_time(update_list[i][-1])
+#     #                 after_image_time, after_image_time_tag = s.get_image_time(update_list[i + 1][0])
+#     #                 if before_image_time > after_image_time:
+#     #                     error_list = update_list
+#     #                     break
+#     #                 elif before_image_time == after_image_time:
+#     #                     if before_image_time_tag > after_image_time_tag:
+#     #                         error_list = update_list
+#     #                         break
+#     #         if not error_list:
+#     #             correct_list = update_list
+#     #         for j in correct_list:
+#     #             correct_folder_list = s.update_correct_name(j)
+#     #             s.link_correct(j, correct_folder_list)
+#     #         for k in error_list:
+#     #             error_folder_list = s.update_error_name(k)
+#     #             s.link_error(k, error_folder_list)
+#     #     print('扫描完毕！')
+'---'
 
 
 # 图像重采样
@@ -1680,27 +2104,69 @@ class SoftMax:
 
 
 # 头部CT MR随访数据刚性配准
-class RigidRegistration:
+class RigidRegistration(AbsBatchProcess):
     def __init__(self):
         self.input_path = None
         self.output_path = None
         self.fix_image = None
 
-    def get_correct_image(self, dir):
+    def matchfile(self, input_folder, pattern):
+        file_names = os.listdir(input_folder)
+        names = list(filter(lambda s: re.findall(pattern, s), file_names))
+        if len(names) == 0:
+            raise Exception('未找到匹配文件！')
+        elif len(names) > 1:
+            raise Exception('匹配文件数大于1！')
+        elif len(names) == 1:
+            path = os.path.join(input_folder, names[0])
+            return path
+
+    def _matchfile(self, input_folder, input_patterns):
+        tmp = []
+        res = []
+        file_names = os.listdir(input_folder)
+        patterns = input_patterns.split(',')
+        for pattern in patterns:
+            names = list(filter(lambda s: re.findall(pattern, s), file_names))
+            tmp += names
+        if len(tmp) == 0:
+            raise Exception('未找到匹配文件！')
+        for i in range(len(tmp)):
+            path = os.path.join(input_folder, tmp[i])
+            res.append(path)
+        return res
+
+    def update_image_type_name(self, input_name: str, tag: str):
+        tmp_name = input_name.split('/')[-1]
+        file_name_list = tmp_name.split('__')
+        if len(file_name_list) == 1:
+            return '__'.join(file_name_list)
+        else:
+            file_name = file_name_list[1]
+            if file_name == 'nan':
+                file_name_list[1] = tag
+            else:
+                file_name_list[1] += '-' + tag
+            file_name_list = '__'.join(file_name_list)
+            return file_name_list
+
+    def get_correct_image(self, dir, moving_pattern):
         from smartimage.functions.registration import ImagePositionCorrector
-        input_path = self.input_path
-        name = dir.split('__')[1:]
-        name = '__'.join(name)
-        dir_path = os.path.join(input_path, dir)
-        image_name = name + '.nii.gz'
-        json_name = name + '.json'
-        image_path = os.path.join(dir_path, image_name)
-        json_path = os.path.join(dir_path, json_name)
-        image = sitk.ReadImage(image_path)
-        # last_position = [-125.000, -128.693, 30.378]
-        last_position = self.get_last_position(json_path)
-        new_image = ImagePositionCorrector.get_correct_image(image, last_position)
-        return new_image
+        res_list = []
+        image_path_list = []
+        moving_list = self._matchfile(dir, moving_pattern)
+        for moving in moving_list:
+            path, file = os.path.split(moving)
+            name = file[:-7]
+            image_path = moving
+            json_path = os.path.join(path, name + '.json')
+            image = sitk.ReadImage(image_path)
+            # last_position = [-125.000, -128.693, 30.378]
+            last_position = self.get_last_position(json_path)
+            new_image = ImagePositionCorrector.get_correct_image(image, last_position)
+            res_list.append(new_image)
+            image_path_list.append(name)
+        return res_list, image_path_list
 
     def get_last_position(self, json_path):
         import json
@@ -1710,40 +2176,330 @@ class RigidRegistration:
         last_position = list(map(float, last_position_str))
         return last_position
 
-    def get_rigid_registration_3d_transform(self, dirname, new_image):
+    def get_rigid_registration_3d_transform(self, dirname, image_name, new_image: list):
         from smartimage.functions.registration import get_rigid_registration_3d_transform
-        input_path = self.input_path
-        dir_path = os.path.join(input_path, dirname)
-        file_name = dirname.split('__')[1:]
-        image_name = '__'.join(file_name) + '.nii.gz'
-        image_path = os.path.join(dir_path, image_name)
-        MOVED_IMAGE = os.path.join(self.output_path, dirname, image_name)
-        moving_image = sitk.Cast(new_image, sitk.sitkFloat32)
-        os.makedirs(os.path.join(self.output_path, dirname), exist_ok=True)
-        # 调整窗宽窗位
         fixed_image = self.fix_image
-        if 'CT' in image_name:
-            fixed_image = sitk.Clamp(self.fix_image, lowerBound=-300, upperBound=300)
-            moving_image = sitk.Clamp(moving_image, lowerBound=-300, upperBound=300)
-        # 获取刚性配准参数
-        final_transform = get_rigid_registration_3d_transform(fixed_image, moving_image)
-        # 将配准参数应用于具体图像
-        moving_resampled = sitk.Resample(moving_image, fixed_image, final_transform, sitk.sitkLinear, 0.0,
-                                         moving_image.GetPixelID())
-        sitk.WriteImage(moving_resampled, MOVED_IMAGE)
+        for i in range(len(new_image)):
+            MOVED_IMAGE = os.path.join(self.output_path, dirname, image_name[i] + '.nii.gz')
+            moved_image = os.path.join(self.output_path, dirname, self.update_image_type_name(MOVED_IMAGE, 'Rig'))
+            moving_image = sitk.Cast(new_image[i], sitk.sitkFloat32)
+            os.makedirs(os.path.join(self.output_path, dirname), exist_ok=True)
+            # 调整窗宽窗位
+            if 'CT' in image_name:
+                fixed_image = sitk.Clamp(self.fix_image, lowerBound=-300, upperBound=300)
+                moving_image = sitk.Clamp(moving_image, lowerBound=-300, upperBound=300)
+            # 获取刚性配准参数
+            final_transform = get_rigid_registration_3d_transform(fixed_image, moving_image)
+            # 将配准参数应用于具体图像
+            moving_resampled = sitk.Resample(moving_image, fixed_image, final_transform, sitk.sitkLinear, 0.0,
+                                             moving_image.GetPixelID())
+            sitk.WriteImage(moving_resampled, moved_image)
 
-    def run(self, input_path, fix, output_path=None, **kwargs):
-        fix_image = sitk.ReadImage(fix, sitk.sitkFloat32)
-        self.fix_image = fix_image
-        self.input_path = input_path
+    def run(self, input_path, fix_pattern, moving_pattern, output_path=None, **kwargs):
         if not output_path:
-            output_path = os.path.join(input_path, 'registration_after')
+            output_path = input_path
         self.output_path = output_path
         Anumber_dirnames = os.listdir(input_path)
         os.makedirs(output_path, exist_ok=True)
         for dirname in Anumber_dirnames:
-            new_image = self.get_correct_image(dirname)
-            self.get_rigid_registration_3d_transform(dirname=dirname, new_image=new_image)
+            dir_path = os.path.join(input_path, dirname)
+            print(dir_path)
+            print(fix_pattern)
+            fix_path = self.matchfile(dir_path, fix_pattern)
+            fix_image = sitk.ReadImage(fix_path, sitk.sitkFloat32)
+            self.fix_image = fix_image
+            self.input_path = input_path
+            try:
+                new_image, image_name = self.get_correct_image(dir_path, moving_pattern)
+                self.get_rigid_registration_3d_transform(dirname=dirname, image_name=image_name, new_image=new_image)
+            except Exception as e:
+                print(dirname, e, traceback.print_exc())
+        print('数据刚性配准完成！', output_path)
+
+
+# 挑选Baseline&Peak&Endpoint
+class SelectBaselinePeakEndpoint:
+
+    def __init__(self):
+        self.input_path = None
+        self.output_path = None
+
+    def _set_output_path(self, input_path: str, output_path: str):
+        self.input_path = input_path
+        self.output_path = output_path
+        if not self.output_path:
+            self.output_path = self.input_path
+        os.makedirs(self.output_path, exist_ok=True)
+
+    def _get_all_file_Anumber(self):
+        res_list = []
+        all_dirname_list = os.listdir(self.input_path)
+        for dirname in all_dirname_list:
+            if os.path.isdir(os.path.join(self.input_path, dirname)):
+                res_list.append(dirname.split('__')[0])
+        return list(set(res_list))
+
+    def _get_same_Anumber_imagefile(self, Anumber):
+        res_list = []
+        all_file_list = os.listdir(self.input_path)
+        for file in all_file_list:
+            if file.startswith(Anumber):
+                res_list.append(os.path.join(self.input_path, file))
+        return res_list
+
+    # def _image_time_sort(self, input_list):
+    #     image_time_list = []
+    #     image_tag_list = []
+    #     for dir in input_list:
+    #         file_name_list = dir.split('__')[1:]
+    #         file_name = '__'.join(file_name_list)
+    #         image_time_json = file_name + '.json'
+    #         image_time_json_path = os.path.join(self.input_path, dir, image_time_json)
+    #         with open(image_time_json_path, 'r', encoding='utf8')as fp:
+    #             json_data = json.load(fp)
+    #         image_time = json_data[0]['0008|0032']
+    #         image_tag = json_data[0]['0008|0033']
+    #         image_time_list.append(image_time)
+    #         image_tag_list.append(image_tag)
+    #     np_argsort_index = list(np.argsort(image_time_list))
+    #     sort_index_list = sorted(image_time_list)
+    #     tmp_list = []
+    #     for i in image_time_list:
+    #         if image_time_list.count(i) > 1:
+    #             tmp_list.append(i)
+    #     list1 = []
+    #     for j in set(tmp_list):
+    #         for n in range(len(sort_index_list)):
+    #             if sort_index_list[n] == j:
+    #                 list1.append(n)
+    #         list2 = []
+    #         for z in list1:
+    #             list2.append(image_tag_list[np_argsort_index[z]])
+    #         np_sort_index_list2 = list(np.argsort(list2))
+    #         for res_index in list1:
+    #             sort_index_list[res_index] = np_sort_index_list2[0]
+    #             np_sort_index_list2.pop(0)
+    #     res = []
+    #     for r in np_argsort_index:
+    #         res.append(input_list[r])
+    #     return res
+    def _get_folder_all_Anumber(self):
+        Anumber_list = []
+        type_dirs = os.listdir(self.input_path)
+        for type_dir in type_dirs:
+            type_dir_path = os.path.join(self.input_path, type_dir)
+            if os.path.isdir(type_dir_path):
+                dir_list = os.listdir(type_dir_path)
+                for dir in dir_list:
+                    if str(dir.split('__')[0]).startswith('A'):
+                        Anumber_list.append(dir.split('__')[0])
+        Anumber_list = list(set(Anumber_list))
+        return Anumber_list
+
+    def _get_all_same_Anumber_imagefile(self, Anumber):
+        res_list = []
+        all_image_type_list = sorted(os.listdir(self.input_path))
+        for image_type in all_image_type_list:
+            image_type_folder_path = os.path.join(self.input_path, image_type)
+            if os.path.isdir(image_type_folder_path):
+                file_list = os.listdir(image_type_folder_path)
+                for file in file_list:
+                    if file.startswith(Anumber):
+                        res_list.append(os.path.join(image_type_folder_path, file))
+        return res_list
+
+    def _image_time_sort(self, input_list: list):
+        image_time_list = []
+        image_tag_list = []
+        for folder_path in input_list:
+            folder_name = folder_path.split('/')[-1]
+            file_name_list = folder_name.split('__')[1:]
+            file_name = '__'.join(file_name_list)
+            json_path = os.path.join(folder_path, file_name + '.json')
+            with open(json_path, 'r', encoding='utf8')as fp:
+                json_data = json.load(fp)
+            image_time = json_data[0]['0008|0032']
+            image_tag = json_data[0]['0008|0033']
+            image_time_list.append(image_time)
+            image_tag_list.append(image_tag)
+        np_argsort_index = list(np.argsort(image_time_list))
+        sort_index_list = sorted(image_time_list)
+        tmp_list = []
+        for i in image_time_list:
+            if image_time_list.count(i) > 1:
+                tmp_list.append(i)
+        list1 = []
+        for j in set(tmp_list):
+            for n in range(len(sort_index_list)):
+                if sort_index_list[n] == j:
+                    list1.append(n)
+            list2 = []
+            for z in list1:
+                list2.append(image_tag_list[np_argsort_index[z]])
+            np_sort_index_list2 = list(np.argsort(list2))
+            for res_index in list1:
+                sort_index_list[res_index] = np_sort_index_list2[0]
+                np_sort_index_list2.pop(0)
+        res = []
+        for r in np_argsort_index:
+            res.append(input_list[r])
+        return res
+
+    def _link_res_image(self, image_path_list: list, Anumber: str):
+        for i in range(len(image_path_list)):
+            p, f = os.path.split(image_path_list[i])
+            folder_name_list = f.split('__')
+            file_name = '__'.join(folder_name_list[1:])
+            if i in [0, 2, len(image_path_list) - 1]:
+                if i == 0:
+                    if folder_name_list[2] == 'nan':
+                        folder_name_list[2] = 'Baseline'
+                    else:
+                        folder_name_list[2] = 'Baseline-' + str(folder_name_list[2])
+
+                elif i == 2:
+                    if folder_name_list[2] == 'nan':
+                        folder_name_list[2] = 'Peak'
+                    else:
+                        folder_name_list[2] = 'Peak-' + str(folder_name_list[2])
+                elif i == len(image_path_list) - 1:
+                    if folder_name_list[2] == 'nan':
+                        folder_name_list[2] = 'Endpoint'
+                    else:
+                        folder_name_list[2] = 'Endpoint-' + str(folder_name_list[2])
+                new_file_name = '__'.join(folder_name_list[1:])
+                new_f = '__'.join(folder_name_list)
+                if os.path.exists(os.path.join(self.output_path, Anumber, new_f, new_file_name + '.nii.gz')):
+                    break
+                else:
+                    os.makedirs(os.path.join(self.output_path, Anumber, new_f), exist_ok=True)
+                    os.link(os.path.join(image_path_list[i], file_name + '.nii.gz'),
+                            os.path.join(self.output_path, Anumber, new_f, new_file_name + '.nii.gz'))
+                    os.link(os.path.join(image_path_list[i], file_name + '.json'),
+                            os.path.join(self.output_path, Anumber, new_f, new_file_name + '.json'))
+
+    def _link_folder_image(self, image_path_list: list, Anumber: str):
+        for i in range(len(image_path_list)):
+            p, f = os.path.split(image_path_list[i])
+            folder_name_list = f.split('__')
+            file_name = '__'.join(folder_name_list[1:])
+            if i in [0, 2, len(image_path_list) - 1]:
+                if i == 0:
+                    if folder_name_list[2] == 'nan':
+                        folder_name_list[2] = 'Baseline'
+                    else:
+                        folder_name_list[2] = 'Baseline-' + str(folder_name_list[2])
+
+                elif i == 2:
+                    if folder_name_list[2] == 'nan':
+                        folder_name_list[2] = 'Peak'
+                    else:
+                        folder_name_list[2] = 'Peak-' + str(folder_name_list[2])
+                elif i == len(image_path_list) - 1:
+                    if folder_name_list[2] == 'nan':
+                        folder_name_list[2] = 'Endpoint'
+                    else:
+                        folder_name_list[2] = 'Endpoint-' + str(folder_name_list[2])
+                new_file_name = '__'.join(folder_name_list[1:])
+                new_f = '__'.join(folder_name_list)
+                if os.path.exists(os.path.join(self.output_path, Anumber, new_f, new_file_name + '.nii.gz')):
+                    break
+                else:
+                    os.makedirs(os.path.join(self.output_path, Anumber, new_f), exist_ok=True)
+                    os.link(os.path.join(image_path_list[i], file_name + '.nii.gz'),
+                            os.path.join(self.output_path, Anumber, new_f, new_file_name + '.nii.gz'))
+                    os.link(os.path.join(image_path_list[i], file_name + '.json'),
+                            os.path.join(self.output_path, Anumber, new_f, new_file_name + '.json'))
+
+    def run(self, input_path, output_path=None, input_file_mode=False, **kwargs):
+        self._set_output_path(input_path, output_path)
+        if input_file_mode:
+            all_anumber_list = self._get_folder_all_Anumber()
+            for Anumber in all_anumber_list:
+                Anumber_folders = self._get_all_same_Anumber_imagefile(Anumber)
+                after_image_list = self._image_time_sort(Anumber_folders)
+                self._link_res_image(after_image_list, str(Anumber))
+        else:
+            all_anumber_list = self._get_all_file_Anumber()
+            for Anumber in all_anumber_list:
+                Anumber_folders = self._get_same_Anumber_imagefile(Anumber)
+                after_image_list = self._image_time_sort(Anumber_folders)
+                self._link_res_image(after_image_list, str(Anumber))
+        print('挑选完成,输出目录：', self.output_path)
+
+
+# 插管（catheter）数据整理
+class CatheterDataProcess:
+    def __init__(self):
+        self.input_path = None
+        self.output_path = None
+        self.csv_path = None
+        self.output_label_path = None
+
+    def _image_process(self):
+        count = 1
+        num = 1
+        files = os.listdir(self.input_path)
+        for file in files:
+            print(file)
+            file_path = os.path.join(self.input_path, file)
+            file_name = file.split('.jpg')[0]
+            image = sitk.ReadImage(file_path)
+            tmp_arr_shape = np.zeros_like(sitk.GetArrayFromImage(image))
+            if count == 100:
+                num += 1
+                count = 0
+            self.output_label_path = os.path.join(self.output_path, 'dataset%s' % num, file_name)
+            os.makedirs(self.output_label_path, exist_ok=True)
+            sitk.WriteImage(image,
+                            os.path.join(self.output_path, 'dataset%s' % num, file_name, str(file_name) + '.nii.gz'))
+            self._label_process(file_name, tmp_arr_shape)
+            count += 1
+
+    def _read_csv(self, file_name):
+        csv_data = pd.read_csv(self.csv_path, encoding='utf-8')
+        tmp_data = csv_data.loc[csv_data['StudyInstanceUID'] == file_name]
+        res_list = []
+        if len(tmp_data) == 1:
+            tmp_data.reset_index(inplace=True, drop=True)
+            # uid = tmp_data.iloc[:, 'StudyInstanceUID']
+            # uid = tmp_data.at[:, 'StudyInstanceUID']
+            uid = tmp_data.at[0, 'StudyInstanceUID']
+            label = tmp_data.at[0, 'label']
+            annotation = tmp_data.at[0, 'data']
+            res_list.append([uid, label, annotation])
+            return res_list
+        elif len(tmp_data) > 1:
+            tmp_data.reset_index(inplace=True, drop=True)
+            for i in range(len(tmp_data)):
+                uid = tmp_data.loc[i, 'StudyInstanceUID']
+                label = tmp_data.loc[i, 'label']
+                annotation = tmp_data.loc[i, 'data']
+                res_list.append([uid, label, annotation])
+            return res_list
+
+    def _label_process(self, file_name, tmp_arr_shape):
+        res_list = self._read_csv(file_name)
+        point_color = 1
+        thickness = 8
+        lineType = 1
+        if res_list:
+            for i in range(len(res_list)):
+                label = res_list[i][1]
+                annotation = json.loads(res_list[i][2])
+                tmp = np.zeros_like(tmp_arr_shape)
+                for i in range(len(annotation) - 1):
+                    cv.line(tmp, tuple(annotation[i]), tuple(annotation[i + 1]), point_color, thickness, lineType)
+                tmp_arr = tmp.reshape(1, tmp.shape[0], tmp.shape[1])
+                res_img = sitk.GetImageFromArray(tmp_arr)
+                sitk.WriteImage(res_img, os.path.join(self.output_label_path, label + '.nii.gz'))
+
+    def run(self, input_path, output_path, csv_path):
+        self.input_path = input_path
+        self.output_path = output_path
+        self.csv_path = csv_path
+        self._image_process()
+        print('数据转换完成：', self.output_path)
 
 
 # 异常值统计主程序
@@ -1753,7 +2509,7 @@ class RigidRegistration:
 #     output_file = os.path.join(output_path, output_file_name)
 #     for sheetname in sheetnames:
 #         dataframe = pd.read_excel(input_path, sheetname=sheetname)
-#         res_dataframe = abnormalprocess.add_tail_data_description(dataframe)
+#         res_dataframe )= abnormalprocess.add_tail_data_description(dataframe)
 #         dataframe_max_index = abnormalprocess.get_max_index(dataframe)
 #         res_dataframe_max_index = abnormalprocess.get_max_index(res_dataframe)
 #         for column in dataframe.columns[2:]:
@@ -1811,43 +2567,22 @@ class RigidRegistration:
 #             writer.save()
 #     print('异常值excel表图输出路径：', output_file)
 '-----'
-# ['c:\\Users\\SMIT\\Desktop\\test1\\1_WholeAbdomen_NoC\\A002928265__CT__nan__5__P10961518__A002928265__3__ABDOMEN5.0B30f']
+# if __name__ == '__main__':
+#     input_path = r'c:\Users\SMIT\Desktop\train'
+#     output_Path = r'c:\Users\SMIT\Desktop\test'
+#     csv_path = r'c:\Users\SMIT\Desktop\labels\train_annotations.csv'
+#     c = CatheterDataProcess()
+#     c.run(input_path, output_Path, csv_path)
 if __name__ == '__main__':
-    input_path = r'c:\Users\SMIT\Desktop\test1'
-    s = NewSortImageName()
-    all_Anumber = s.get_folder_all_Anumber(input_path)
-    image_type_folders = os.listdir(input_path)
-    image_type_folder_list = os.listdir(input_path)
-    for number in all_Anumber:
-        correct_list = []
-        update_list = []
-        error_list = []
-        for image_type_folder in image_type_folder_list:
-            image_type_path = os.path.join(input_path, image_type_folder)
-            if os.path.isdir(image_type_path):
-                folder_list = s.get_all_same_anumber_file(image_type_path, str(number))
-                res = s.image_time_sort(folder_list)
-                update_list.append(res)
-        print(update_list)
-        if len(update_list) == 1:
-            correct_list = update_list
-        elif len(update_list) > 1:
-            for i in range(len(update_list) - 1):
-                before_image_time, before_image_time_tag = s.image_time_sort(update_list[i][-1])
-                after_image_time, after_image_time_tag = s.image_time_sort(update_list[i + 1][-1])
-                if before_image_time > after_image_time:
-                    error_list = update_list
-                elif before_image_time == after_image_time:
-                    if before_image_time_tag < after_image_time_tag:
-                        correct_list = update_list
-                    else:
-                        error_list = update_list
-                else:
-                    error_list = update_list
-
-        for j in correct_list:
-            correct_folder_list = s.update_correct_name(j)
-            s.link_correct(j, correct_folder_list)
-        for k in error_list:
-            error_folder_list = s.update_error_name(k)
-            s.link_error(k, error_folder_list)
+    s = SortImageName()
+    s.run(
+        input_path=r'e:\DATA\DCENominate_for_WXP_20201130\test2',
+        output_path=r'e:\DATA\DCENominate_for_WXP_20201130\test',
+        json_name='',
+        reference_head='1_WholeAbdomen_NoC,2_WholeAbdomen_AP,3_WholeAbdomen_PVP',
+        reference_foot='7_WholeAbdomen_CTU',
+        no_reference='4_WholeAbdomen_DP1,5_WholeAbdomen_DP2,6_WholeAbdomen_DP3',
+        fix_image_type=True,
+        fix_folder_type=True,
+        output_file_mode=True,
+    )
